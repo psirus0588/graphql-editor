@@ -1,13 +1,6 @@
-import {
-  GraphQLNodeParams,
-  Helpers,
-  Instances,
-  ParserField,
-  ParserTree,
-  TypeExtension
-} from 'graphql-zeus';
-import { Link, Node, NodeUtils } from 'graphsource';
-import { EditorNodeDefinition } from '../Models';
+import { GraphQLNodeParams, Helpers, Instances, ParserField, ParserTree, TypeExtension, Value } from 'graphql-zeus';
+import { Link, NodeUtils } from 'graphsource';
+import { EditorNodeDefinition, EditorNode } from '../Models';
 
 /**
  * Transform Zeus ParserTree to Nodes and Node Definitions, this file should be refactored in future
@@ -22,10 +15,7 @@ export class TreeToNodes {
    * @returns {boolean} params match
    * @memberof TreeToNodes
    */
-  static compareData(
-    d1: GraphQLNodeParams | undefined,
-    d2: GraphQLNodeParams | undefined
-  ): boolean {
+  static compareData(d1: GraphQLNodeParams | undefined, d2: GraphQLNodeParams | undefined): boolean {
     if (!d1 && d2) {
       return false;
     }
@@ -49,22 +39,22 @@ export class TreeToNodes {
    */
   static connectAndCreate = (
     n: ParserField,
-    rootNode: Node,
+    rootNode: EditorNode,
     links: Link[],
     nodeDefinitions: EditorNodeDefinition[],
-    nodes: Array<Node<GraphQLNodeParams>>
-  ): Node<GraphQLNodeParams> => {
+    nodes: Array<EditorNode>,
+  ): EditorNode => {
     const createdNode = TreeToNodes.resolveField(n, nodeDefinitions, nodes, links);
     links.push({
       centerPoint: 0.5,
       o: createdNode,
-      i: rootNode
+      i: rootNode,
     });
     rootNode.inputs!.push(createdNode);
     createdNode.outputs!.push(rootNode);
     nodes.push(createdNode);
     return createdNode;
-  }
+  };
   /**
    * Create interface nodes
    *
@@ -76,41 +66,44 @@ export class TreeToNodes {
    */
   static createInterfaces = (
     interfaces: string[],
-    rootNode: Node,
+    rootNode: EditorNode,
     nodeDefinitions: EditorNodeDefinition[],
     links: Link[],
-    nodes: Array<Node<GraphQLNodeParams>>
+    nodes: Array<EditorNode>,
   ) => {
     const createdNode = TreeToNodes.connectAndCreate(
       {
         name: Helpers.Implements,
+        data: {
+          type: Helpers.Implements,
+        },
         type: {
-          name: Helpers.Implements
-        }
+          name: Helpers.Implements,
+        },
       },
       rootNode,
       links,
       nodeDefinitions,
-      nodes
+      nodes,
     );
     interfaces.forEach((i) => {
       TreeToNodes.connectAndCreate(
         {
           type: {
-            name: i
+            name: i,
           },
           name: i,
           data: {
-            type: Instances.Implement
-          }
+            type: Instances.Implement,
+          },
         },
         createdNode,
         links,
         nodeDefinitions,
-        nodes
+        nodes,
       );
     });
-  }
+  };
   /**
    * Create connected directives helper node
    *
@@ -118,38 +111,41 @@ export class TreeToNodes {
    * @param nodeDefinitions already existing nodeDefinitions
    * @param links already existing links
    * @param nodes already existing nodes
-   * @returns {Node<GraphQLNodeParams>} 'graphsource' ready Node
+   * @returns {EditorNode} 'graphsource' ready Node
    * @memberof TreeToNodes
    */
   static createDirectivesHelper = (
-    rootNode: Node,
+    rootNode: EditorNode,
     nodeDefinitions: EditorNodeDefinition[],
     links: Link[],
-    nodes: Array<Node<GraphQLNodeParams>>
-  ): Node<GraphQLNodeParams> => {
+    nodes: Array<EditorNode>,
+  ): EditorNode => {
     return TreeToNodes.connectAndCreate(
       {
         name: Helpers.Directives,
+        data: {
+          type: Helpers.Directives,
+        },
         type: {
-          name: Helpers.Directives
-        }
+          name: Helpers.Directives,
+        },
       },
       rootNode,
       links,
       nodeDefinitions,
-      nodes
+      nodes,
     );
-  }
+  };
   static createExtendHelper(f: ParserField): ParserField {
     return {
       args: [f],
       data: {
-        type: Helpers.Extend
+        type: Helpers.Extend,
       },
       name: Helpers.Extend,
       type: {
-        name: Helpers.Extend
-      }
+        name: Helpers.Extend,
+      },
     } as ParserField;
   }
   /**
@@ -166,10 +162,10 @@ export class TreeToNodes {
   static resolveField(
     root: ParserField,
     nodeDefinitions: EditorNodeDefinition[],
-    nodes: Array<Node<GraphQLNodeParams>>,
+    nodes: Array<EditorNode>,
     links: Link[],
-    rootNode?: Node
-  ): Node<GraphQLNodeParams> {
+    rootNode?: EditorNode,
+  ): EditorNode {
     let defs: EditorNodeDefinition[];
     if (root.data && root.data!.type! in TypeExtension) {
       defs = nodeDefinitions.filter((nd) => nd.type === root.name)!;
@@ -181,9 +177,9 @@ export class TreeToNodes {
       def = defs.find((d) => TreeToNodes.compareData(d.data, root.data))!;
     }
     const nodeCreated = NodeUtils.createBasicNode({ x: 0, y: 0 }, def, {
-      name: root.name,
+      name: def.data?.type === Value.NullValue ? 'null' : root.name,
       description: root.description,
-      options: root.type.options || root.type.directiveOptions || root.type.operations || []
+      options: root.type.options || root.type.directiveOptions || root.type.operations || [],
     });
     const newDefinitions = NodeUtils.createObjectDefinition(def, root.name);
     newDefinitions.forEach((newDefinition) => {
@@ -196,7 +192,7 @@ export class TreeToNodes {
       links.push({
         centerPoint: 0.5,
         o: nodeCreated,
-        i: rootNode
+        i: rootNode,
       });
       rootNode.inputs!.push(nodeCreated);
       nodeCreated.outputs!.push(rootNode);
@@ -210,42 +206,36 @@ export class TreeToNodes {
    * @param tree tree generated by Parser from 'graphql-zeus'
    * @param nodeDefinitions predefined graphql definitions
    * @returns {{
-   *     nodes: Array<Node<GraphQLNodeParams>>;
+   *     nodes: Array<EditorNode>;
    *     links: Link[];
    *   }} 'graphsource' ready links and nodes
    * @memberof TreeToNodes
    */
   static resolveTree(
     tree: ParserTree,
-    nodeDefinitions: EditorNodeDefinition[]
+    nodeDefinitions: EditorNodeDefinition[],
   ): {
-    nodes: Array<Node<GraphQLNodeParams>>;
+    nodes: Array<EditorNode>;
     links: Link[];
   } {
-    const nodes: Array<Node<GraphQLNodeParams>> = [];
+    const nodes: Array<EditorNode> = [];
     const links: Link[] = [];
     const resolveAllFields = (
       parserFields: Array<{
         parserField: ParserField;
-        node?: Node<GraphQLNodeParams>;
-      }>
+        node?: EditorNode;
+      }>,
     ) => {
       const rootNodes = parserFields.map(({ parserField, node }) => {
         return {
           parserField,
-          node: TreeToNodes.resolveField(parserField, nodeDefinitions, nodes, links, node)
+          node: TreeToNodes.resolveField(parserField, nodeDefinitions, nodes, links, node),
         };
       });
       rootNodes
         .filter((pf) => pf.parserField.interfaces && pf.parserField.interfaces.length)
         .forEach((f) => {
-          TreeToNodes.createInterfaces(
-            f.parserField.interfaces!,
-            f.node,
-            nodeDefinitions,
-            links,
-            nodes
-          );
+          TreeToNodes.createInterfaces(f.parserField.interfaces!, f.node, nodeDefinitions, links, nodes);
         });
 
       const returnRootNodes = rootNodes
@@ -253,8 +243,8 @@ export class TreeToNodes {
         .map((rn) =>
           rn.parserField.args!.map((a) => ({
             parserField: a,
-            node: rn.node
-          }))
+            node: rn.node,
+          })),
         )
         .reduce((a, b) => [...a, ...b], []);
       if (returnRootNodes.length > 0) {
@@ -263,15 +253,10 @@ export class TreeToNodes {
       const returnDirectives = rootNodes
         .filter((rn) => rn.parserField.directives && rn.parserField.directives.length)
         .map((rn) => {
-          const directiveHelper = TreeToNodes.createDirectivesHelper(
-            rn.node,
-            nodeDefinitions,
-            links,
-            nodes
-          );
+          const directiveHelper = TreeToNodes.createDirectivesHelper(rn.node, nodeDefinitions, links, nodes);
           return rn.parserField.directives!.map((a) => ({
             parserField: a,
-            node: directiveHelper
+            node: directiveHelper,
           }));
         })
         .reduce((a, b) => [...a, ...b], []);
@@ -284,13 +269,11 @@ export class TreeToNodes {
     resolveAllFields(
       tree.nodes
         .map((parserField) =>
-          parserField.data!.type! in TypeExtension
-            ? TreeToNodes.createExtendHelper(parserField)
-            : parserField
+          parserField.data!.type! in TypeExtension ? TreeToNodes.createExtendHelper(parserField) : parserField,
         )
         .map((parserField) => ({
-          parserField
-        }))
+          parserField,
+        })),
     );
     return { nodes, links };
   }

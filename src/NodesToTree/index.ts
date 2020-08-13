@@ -1,22 +1,22 @@
 import {
   Directive,
-  GraphQLNodeParams,
   Helpers,
   OperationType,
   Options,
   ParserField,
   TreeToGraphQL,
-  TypeSystemDefinition
+  TypeSystemDefinition,
 } from 'graphql-zeus';
-import { Link, Node } from 'graphsource';
+import { Link } from 'graphsource';
+import { EditorNode } from '../Models';
 
 export class NodesToTree {
-  static resolveFieldNode = (n: Node): ParserField =>
+  static resolveFieldNode = (n: EditorNode): ParserField =>
     ({
       name: n.name,
       type: {
         name: n.definition.type,
-        options: n.options
+        options: n.options,
       },
       data: n.definition.data,
       description: n.description,
@@ -28,12 +28,11 @@ export class NodesToTree {
             .map(NodesToTree.resolveFieldNode)
         : undefined,
       args: n.inputs
-        ? n.inputs
-            .filter((i) => i.definition.type !== Helpers.Directives)
-            .map(NodesToTree.resolveFieldNode)
-        : undefined
-    } as ParserField)
-  static resolveObjectNode = (n: Node<GraphQLNodeParams>) => {
+        ? n.inputs.filter((i) => i.definition.type !== Helpers.Directives).map(NodesToTree.resolveFieldNode)
+        : undefined,
+    } as ParserField);
+
+  static resolveObjectNode = (n: EditorNode) => {
     const templateField: ParserField = {
       name: n.name,
       description: n.description,
@@ -44,9 +43,9 @@ export class NodesToTree {
         directiveOptions:
           n.definition.data!.type! === TypeSystemDefinition.DirectiveDefinition
             ? (n.options as Directive[])
-            : undefined
+            : undefined,
       },
-      data: n.definition.data,
+      data: n.definition.data!,
       directives: n.inputs
         ? n.inputs
             .filter((i) => i.definition.type === Helpers.Directives)
@@ -65,19 +64,19 @@ export class NodesToTree {
             .filter((i) => i.definition.type !== Helpers.Implements)
             .filter((i) => i.definition.type !== Helpers.Directives)
             .map(NodesToTree.resolveFieldNode)
-        : undefined
+        : undefined,
     };
     return templateField;
-  }
-  static parse(nodes: Array<Node<GraphQLNodeParams>>, links: Link[]) {
+  };
+
+  static parse(nodes: Array<EditorNode>, links: Link[]) {
     if (!nodes.length) {
       return '';
     }
     const roots = nodes.filter((n) => n.definition.root).map(NodesToTree.resolveObjectNode);
     const graphql = TreeToGraphQL.parse({
-      nodes: roots
+      nodes: roots,
     });
-    const theBeginning = `# GraphQL from graph at:\n# graphqleditor.com\n\n`;
-    return theBeginning.concat(graphql);
+    return graphql;
   }
 }

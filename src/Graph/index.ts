@@ -1,12 +1,11 @@
-import { buildASTSchema, parse } from 'graphql';
-import { OperationType, Parser, ParserTree, Utils, Value } from 'graphql-zeus';
-import { Diagram, DiagramEvents, Link, Node, Old, Serializer } from 'graphsource';
-import { ScreenPosition } from 'graphsource/lib/IO/ScreenPosition';
-import { EditorNodeDefinition } from '../Models';
+import { Parser, ParserTree, Value, TreeToGraphQL } from 'graphql-zeus';
+import { Diagram, Link } from 'graphsource';
+import { EditorNodeDefinition, EditorNode, PassedSchema } from '../Models';
 import { NodesToTree } from '../NodesToTree';
 import { TreeToNodes } from '../TreeToNodes';
 import { Definitions } from './definitions';
 import { theme } from './theme';
+import { Workers } from '../worker';
 /**
  * Class for controlling the state of diagram and exposing schema functions
  */
@@ -15,31 +14,28 @@ export class GraphController {
    * Strip schema keyword from schema - useful in schema stitch
    */
   static getGraphqlWithoutRootSchema = (schema: string): string => {
-    const basicDefinitions = Definitions.generate([]);
-    const tree = TreeToNodes.resolveTree(Parser.parse(schema), basicDefinitions);
-    const nodes = tree.nodes.map((n) => ({
+    const tree = Parser.parse(schema);
+    tree.nodes.map((n) => ({
       ...n,
-      options: n.options.filter((no) => !(no in OperationType))
+      type: {
+        ...n.type,
+        operations: undefined,
+      },
     }));
-    return NodesToTree.parse(nodes, tree.links);
-  }
+    return TreeToGraphQL.parse(tree);
+  };
 
-  static flatNodeInputs = (node: Node): Node[] =>
-    node.inputs
-      ? [...node.inputs, node.inputs.map(GraphController.flatNodeInputs)].flat(Infinity)
-      : ([] as Node[])
-  public definitions?: EditorNodeDefinition[];
+  public definitions: EditorNodeDefinition[] = [];
   public stitchDefinitions: EditorNodeDefinition[] = [];
   public schema = '';
-  public stichesCode = '';
-  public nodes: Node[] = [];
-  public selectedNodes: Node[] = [];
-  private stitchNodes: { nodes: Node[]; links: Link[] } = { nodes: [], links: [] };
-  private diagram?: Diagram;
-  private passSelectedNodes?: (nodes: Node[]) => void;
-  private passSchema?: (schema: string, stitches?: string) => void;
+  public librariesCode: string | undefined;
+  public nodes: EditorNode[] = [];
+  public selectedNodes: EditorNode[] = [];
+  private libraryNodes: { nodes: EditorNode[]; links: Link[] } = { nodes: [], links: [] };
+  public diagram?: Diagram;
+  private passSelectedNodes?: (nodes: EditorNode[]) => void;
+  private passSchema?: (props: PassedSchema) => void;
   private passDiagramErrors?: (errors: string) => void;
-  private onSerialize?: (schema: string) => void;
   private reloadSchema?: boolean;
   private nodeCreated?: boolean;
   /**
@@ -53,120 +49,186 @@ export class GraphController {
         nodeOptions: 0.5,
         nodeTitle: 0.5,
         nodeType: 0.5,
-        detailedLinks: 0.9
+        detailedLinks: 0.9,
       },
-      theme
+      theme,
     });
-    this.diagram.on(DiagramEvents.LinkCreated, this.onCreateLink);
-    this.diagram.on(DiagramEvents.NodeCreated, this.onCreateNode);
-    this.diagram.on(DiagramEvents.NodeSelected, this.onSelectNode);
-    this.diagram.on(DiagramEvents.DataModelChanged, this.serialise);
+    this.diagram.eventBus.on('LinkCreated', this.onCreateLink);
+    this.diagram.eventBus.on('NodeCreated', this.onCreateNode);
+    this.diagram.eventBus.on('NodeSelected', this.onSelectNode);
+    this.diagram.eventBus.on('DataModelChanged', this.serialise);
     this.generateBasicDefinitions();
-  }
+  };
   /**
    * Generate basic defintions for GraphQL like type,input,directive etc..
    */
   generateBasicDefinitions = () => {
     this.definitions = Definitions.generate([]);
-    this.diagram!.setDefinitions(this.definitions);
-  }
+    if (!this.diagram) {
+      throw new Error(`Cannot run generateBasicDefinitions as diagram is not ready`);
+    }
+    this.diagram.setDefinitions(this.definitions);
+  };
   /**
    * Checks if graph is empty
    */
   isEmpty = (): boolean => {
     return this.nodes.length === 0;
-  }
+  };
   /**
    * Call diagram resize
    */
   resizeDiagram = (): void => {
-    this.diagram!.autoResize();
-  }
-  /**
-   * Set function to be called on serialise
-   */
-  setOnSerialise = (f: (schema: string) => void) => {
-    this.onSerialize = f;
-  }
-
+    if (!this.diagram) {
+      throw new Error(`Cannot run resizeDiagram as diagram is not ready`);
+    }
+    this.diagram.autoResize();
+  };
   /**
    * Set function to pass currently selected nodes
    */
-  setPassSelectedNodes = (f: (nodes: Node[]) => void) => {
+  setPassSelectedNodes = (f: (nodes: EditorNode[]) => void) => {
     this.passSelectedNodes = f;
-  }
+  };
   /**
    * Function to control editable state of diagram
    */
   setReadOnly = (isReadOnly: boolean) => {
-    this.diagram!.setReadOnly(isReadOnly);
-  }
+    if (!this.diagram) {
+      throw new Error(`Cannot run setReadOnly as diagram is not ready`);
+    }
+    this.diagram.setReadOnly(isReadOnly);
+  };
+  /**
+   * Move grpah to 0,0
+   */
+  zeroGraph = () => {
+    if (!this.diagram) {
+      throw new Error(`Cannot run zeroGraph as diagram is not ready`);
+    }
+    this.diagram.zeroDiagram();
+  };
   /**
    * Reset Graph clearing all the nodes and links from it
    */
   resetGraph = () => {
-    const nodes: Node[] = [];
+    const nodes: EditorNode[] = [];
     const links: Link[] = [];
-    this.definitions = Definitions.generate(this.stitchNodes.nodes).concat(this.stitchDefinitions!);
-    this.diagram!.setNodes(nodes);
-    this.diagram!.setLinks(links);
-    this.diagram!.setDefinitions(this.definitions);
-    this.diagram!.zeroDiagram();
+    this.definitions = Definitions.generate(this.libraryNodes.nodes).concat(this.stitchDefinitions);
+    if (!this.diagram) {
+      throw new Error(`Cannot run resetGraph as diagram is not ready`);
+    }
+    this.diagram.setNodes(nodes);
+    this.diagram.setLinks(links);
+    this.diagram.setDefinitions(this.definitions);
     this.serialise({
       nodes,
-      links
+      links,
     });
     if (this.passSchema) {
-      this.passSchema('', this.stichesCode);
+      this.passSchema({
+        code: '',
+        libraries: this.librariesCode,
+      });
     }
-  }
+    this.diagram?.forceRender();
+  };
   /**
    * Reset stitches code
    */
   resetStitches = () => {
-    this.stitchNodes.nodes = [];
-    this.stitchNodes.links = [];
+    this.libraryNodes.nodes = [];
+    this.libraryNodes.links = [];
     this.stitchDefinitions = [];
-  }
+  };
+  loadGraphQLAndLibraries = ({
+    schema,
+    libraries,
+    forceZero,
+  }: {
+    schema: string;
+    libraries: string;
+    forceZero?: boolean;
+  }) => {
+    if (this.schema === schema) {
+      if (libraries === this.librariesCode) {
+        return;
+      }
+    }
+    this.loadLibraries(libraries);
+    this.loadGraphQL(schema, forceZero);
+  };
   /**
    * Load GraphQL code and convert it to diagram nodes
    */
-  loadGraphQL = (schema: string) => {
-    this.definitions = Definitions.generate(this.stitchNodes.nodes).concat(this.stitchDefinitions!);
-    this.diagram!.setDefinitions(this.definitions);
+  loadGraphQL = (schema: string, forceZero?: boolean) => {
+    const zeroGraph = this.schema.length === 0 && !!schema;
+    this.definitions = Definitions.generate(this.libraryNodes.nodes).concat(this.stitchDefinitions);
+    if (!this.diagram) {
+      throw new Error(`Cannot run loadGraphQL as diagram is not ready`);
+    }
+    this.diagram.setDefinitions(this.definitions);
     if (schema.length === 0) {
       this.resetGraph();
       return;
     }
-    const result = TreeToNodes.resolveTree(
-      Parser.parse(
-        schema + this.stichesCode,
-        this.stitchNodes.nodes.filter((n) => n.definition.root).map((n) => n.name)
-      ),
-      this.definitions
-    );
-    this.diagram!.setDefinitions(this.definitions);
-    this.load(result.nodes, result.links);
-  }
+    if (this.librariesCode) {
+      const excludeLibraryNodesFromDiagram = Parser.parse(this.librariesCode);
+      const parsedResult = Parser.parse(schema, [], this.librariesCode);
+      const filteredResult: ParserTree = {
+        nodes: parsedResult.nodes.filter(
+          (n) =>
+            !excludeLibraryNodesFromDiagram.nodes.find((eln) => eln.name === n.name && eln.data.type === n.data.type),
+        ),
+      };
+      const result = TreeToNodes.resolveTree(filteredResult, this.definitions);
+      this.diagram.setDefinitions(this.definitions);
+      this.load(result.nodes, result.links);
+    } else {
+      const parsedResult = Parser.parse(schema);
+      const result = TreeToNodes.resolveTree(parsedResult, this.definitions);
+      this.diagram.setDefinitions(this.definitions);
+      this.load(result.nodes, result.links);
+    }
+    if (zeroGraph || forceZero) {
+      this.zeroGraph();
+    } else {
+      this.diagram?.forceRender();
+    }
+  };
+  /**
+   * Load stitches code to Graph controller
+   */
+  loadLibraries = (schema: string): void => {
+    this.librariesCode = schema;
+    if (schema.length === 0) {
+      this.libraryNodes = {
+        nodes: [],
+        links: [],
+      };
+      this.stitchDefinitions = [];
+      return;
+    }
+    let basicDefinitions = Definitions.generate([]);
+    this.libraryNodes = TreeToNodes.resolveTree(Parser.parse(this.librariesCode), basicDefinitions);
+    basicDefinitions = Definitions.generate(this.libraryNodes.nodes);
+    const rememberBasicDefinitions = [...basicDefinitions];
+    this.libraryNodes = TreeToNodes.resolveTree(Parser.parse(this.librariesCode), basicDefinitions);
+    this.stitchDefinitions = basicDefinitions.filter((bd) => !rememberBasicDefinitions.find((rbd) => rbd.id === bd.id));
+  };
   centerOnNodeByID = (id: string) => {
-    const node = this.nodes.find((n) => n.id === id)!;
-    this.diagram!.selectNode(node);
-    this.diagram!.centerOnNode(node);
+    const node = this.nodes.find((n) => n.id === id);
+    if (!this.diagram) {
+      throw new Error(`Cannot run centerOnNodeByID as diagram is not ready`);
+    }
+    if (!node) {
+      throw new Error('Cannot center on that node as it doesnt exist');
+    }
+    this.diagram.selectNode(node);
+    this.diagram.centerOnNode(node);
     this.selectedNodes = [node];
-  }
+  };
 
-  loadOldFormat = (serializedDiagram: string) => {
-    const deserializedOldVersion = Old.deserialize(JSON.parse(serializedDiagram));
-    const deserialized = Serializer.deserialize(
-      {
-        nodes: deserializedOldVersion.nodes,
-        links: deserializedOldVersion.links
-      },
-      this.definitions!
-    );
-    this.load(deserialized.nodes, deserialized.links);
-    return deserialized;
-  }
   /**
    * Load from serialized ParserTree
    *
@@ -174,121 +236,104 @@ export class GraphController {
    * @memberof GraphController
    */
   loadSerialized = (serializedDiagram: ParserTree) => {
-    const deserialized = TreeToNodes.resolveTree(serializedDiagram, this.definitions!);
+    const deserialized = TreeToNodes.resolveTree(serializedDiagram, this.definitions);
     this.load(deserialized.nodes, deserialized.links);
-  }
-  /**
-   * Get schema from URL and load it to graph
-   */
-  getSchemaFromURL = async (url: string, header?: string): Promise<void> => {
-    const schema = await Utils.getFromUrl(url, header);
-    this.loadGraphQL(schema);
-  }
-  setPassSchema = (fn: (schema: string, stitches?: string) => void) => (this.passSchema = fn);
+  };
+  setPassSchema = (fn: (props: PassedSchema) => void) => (this.passSchema = fn);
   setPassDiagramErrors = (fn: (errors: string) => void) => (this.passDiagramErrors = fn);
-  /**
-   * Load stitches code to Graph controller
-   */
-  loadStitches = (schema: string): void => {
-    if (!schema) {
-      return;
+  screenShot = async () => {
+    if (!this.diagram) {
+      throw new Error(`Cannot run screenShot as diagram is not ready`);
     }
-    let basicDefinitions = Definitions.generate([]);
-    this.stichesCode = schema;
-    this.stitchNodes = TreeToNodes.resolveTree(Parser.parse(this.stichesCode), basicDefinitions);
-    basicDefinitions = Definitions.generate(this.stitchNodes.nodes);
-    const rememberBasicDefinitions = [...basicDefinitions];
-    this.stitchNodes = TreeToNodes.resolveTree(Parser.parse(this.stichesCode), basicDefinitions);
-    this.stitchDefinitions = basicDefinitions.filter(
-      (bd) => !rememberBasicDefinitions.find((rbd) => rbd.id === bd.id)
-    );
-  }
+    return this.diagram.screenShot();
+  };
   /**
    * Load nodes and links into diagram
    *
    * @param nodes
    * @param links
    */
-  private load = (nodes: Node[], links: Link[]) => {
-    this.diagram!.setNodes(nodes, true);
-    this.diagram!.setLinks(links);
-    this.diagram!.zeroDiagram();
+  private load = (nodes: EditorNode[], links: Link[]) => {
+    if (!this.diagram) {
+      throw new Error(`Cannot run load as diagram is not ready`);
+    }
+    this.diagram.setNodes(nodes, true);
+    this.diagram.setLinks(links);
     this.serialise({
       nodes,
-      links
+      links,
     });
-  }
+  };
   /**
    * Serialise nodes to GraphQL
    */
-  private serialise = ({ nodes, links }: { nodes: Node[]; links: Link[] }): void => {
+  private serialise = ({ nodes, links }: { nodes: EditorNode[]; links: Link[] }) => {
     this.nodes = nodes;
     let graphQLSchema = '';
     if (nodes.length === 0) {
       this.schema = graphQLSchema;
-      if (this.onSerialize) {
-        this.onSerialize(graphQLSchema);
-      }
       if (this.passSchema) {
-        this.passSchema(graphQLSchema, this.stichesCode);
+        this.passSchema({
+          code: graphQLSchema,
+          libraries: this.librariesCode,
+        });
       }
       return;
     }
     graphQLSchema = NodesToTree.parse(nodes, links);
     try {
       const unNamedNode = this.nodes.find(
-        (n) =>
-          n.name.length === 0 &&
-          n.definition.data &&
-          (n.definition.data as any).type !== Value.StringValue
+        (n) => n.name.length === 0 && n.definition.data && (n.definition.data as any).type !== Value.StringValue,
       );
       if (unNamedNode) {
-        throw new Error(
-          `Every node should have a name. Please fill in a name and click enter or defocus`
-        );
+        throw new Error(`Every node should have a name. Please fill in a name and click enter or defocus`);
       }
-      buildASTSchema(parse(graphQLSchema + this.stichesCode));
-      this.schema = graphQLSchema;
-      if (this.onSerialize) {
-        this.onSerialize(graphQLSchema);
-      }
-      if (this.passSchema) {
-        this.passSchema(graphQLSchema, this.stichesCode);
-      }
-      if (this.nodeCreated) {
-        this.nodeCreated = false;
-        this.reloadSchema = false;
-      }
-      if (this.reloadSchema) {
-        this.reloadSchema = false;
-        this.loadGraphQL(graphQLSchema);
-      }
+      Workers.validate(graphQLSchema, this.librariesCode).then((errors) => {
+        if (errors.length > 0) {
+          if (this.passDiagramErrors) {
+            this.passDiagramErrors(errors.map((e) => e.text).join('\n\n'));
+          }
+          return;
+        }
+        this.schema = graphQLSchema;
+        if (this.passSchema) {
+          this.passSchema({
+            code: graphQLSchema,
+            libraries: this.librariesCode,
+          });
+        }
+        if (this.nodeCreated) {
+          this.nodeCreated = false;
+          this.reloadSchema = false;
+        }
+        if (this.reloadSchema) {
+          this.reloadSchema = false;
+          this.loadGraphQL(graphQLSchema);
+        }
+      });
     } catch (error) {
       if (this.passDiagramErrors) {
-        // tslint:disable
-        console.log(error);
-        // tslint:enable
         this.passDiagramErrors(error.message);
       }
       return;
     }
-  }
+  };
   /**
    * Fired on new link creation
    */
   private onCreateLink = () => {
     this.reloadSchema = true;
-  }
+  };
   /**
    * Fired on new node creation
    */
   private onCreateNode = () => {
     this.nodeCreated = true;
-  }
-  private onSelectNode = ([_, nodes]: [ScreenPosition, Node[]]) => {
-    this.selectedNodes = nodes;
+  };
+  private onSelectNode = ({ selectedNodes }: { selectedNodes: EditorNode[] }) => {
+    this.selectedNodes = selectedNodes;
     if (this.passSelectedNodes) {
       this.passSelectedNodes(this.selectedNodes);
     }
-  }
+  };
 }

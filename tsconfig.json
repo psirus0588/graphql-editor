@@ -16,7 +16,7 @@
     "lib": ["es6", "es7", "esnext", "dom"],
     "rootDir": "./src",
     "baseUrl": "./src/",
-    "watch": true
+    "skipLibCheck": true
   },
-  "exclude": ["lib", "node_modules", "sandbox", "cloud", "docs", "cypress", "__tests__"]
+  "exclude": ["lib", "sandbox", "cloud", "docs", "cypress", "__test__","__mocks__"]
 }

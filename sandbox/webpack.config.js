@@ -3,16 +3,18 @@ var path = require('path');
 var sourcePath = path.join(__dirname, './');
 var outPath = path.join(__dirname, './');
 var HtmlWebpackPlugin = require('html-webpack-plugin');
-
+var MonacoWebpackPlugin = require('monaco-editor-webpack-plugin');
+const baseRules = require('./weback.rules');
 module.exports = {
   context: sourcePath,
   entry: {
-    app: './index.tsx'
+    app: './index.tsx',
   },
   output: {
     path: outPath,
     filename: 'bundle.js',
-    publicPath: '/'
+    chunkFilename: '[chunkhash].js',
+    publicPath: '/',
   },
   target: 'web',
   mode: 'development',
@@ -20,23 +22,24 @@ module.exports = {
     extensions: ['.mjs', '.js', '.jsx', '.ts', '.tsx'],
     mainFields: ['module', 'browser', 'main'],
     alias: {
-      app: path.resolve(__dirname, '../src/')
-    }
+      app: path.resolve(__dirname, '../src/'),
+    },
   },
   module: {
     rules: [
+      ...baseRules,
       {
-        test: /\.tsx?$/,
-        loader: 'ts-loader',
-        options: { configFile: 'sandbox/tsconfig.json' }
+        test: /\.css$/i,
+        use: ['style-loader', 'css-loader'],
       },
-      { test: /\.(png|svg)$/, use: 'url-loader?limit=10000' },
-      { test: /\.(jpg|gif)$/, use: 'file-loader' }
-    ]
+    ],
   },
   plugins: [
+    new MonacoWebpackPlugin({
+      languages: ['markdown'],
+    }),
     new HtmlWebpackPlugin({
-      template: 'assets/index.html'
-    })
-  ]
+      template: 'assets/index.html',
+    }),
+  ],
 };

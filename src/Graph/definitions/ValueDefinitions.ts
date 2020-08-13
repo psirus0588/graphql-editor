@@ -17,44 +17,56 @@ export class ValueDefinitions {
       type: ValueDefinition.EnumValueDefinition,
       data: {
         type: ValueDefinition.EnumValueDefinition,
-        for: [TypeDefinition.EnumTypeDefinition]
+        for: [TypeDefinition.EnumTypeDefinition],
       },
       help: help.EnumValue,
       acceptsInputs: (d, defs) =>
         Utils.dataForTypes(defs, [ValueDefinition.EnumValueDefinition]).map(
-          Utils.nodeDefinitionToAcceptedEditorNodeDefinition
+          Utils.nodeDefinitionToAcceptedEditorNodeDefinition,
         ),
       instances: [
         {
           data: {
-            type: Value.EnumValue
+            type: Value.EnumValue,
           },
           node: {
             inputs: null,
             outputs: [],
             notEditable: true,
-            name: undefined
-          }
-        }
-      ]
+            name: undefined,
+          },
+        },
+      ],
     };
     const objectValue: EditorNodeDefinition = {
-      node: { ...Utils.createOND(Value.ObjectValue, true), inputs: [], outputs: [] },
+      node: {
+        ...Utils.createOND(Value.ObjectValue, true),
+        inputs: [],
+        outputs: [],
+      },
       type: Value.ObjectValue,
       data: {
         type: Value.ObjectValue,
-        for: [ValueDefinition.InputValueDefinition]
+        for: [ValueDefinition.InputValueDefinition],
       },
       help: help.EnumValue,
       acceptsInputs: (d, defs, _, nodes, node) => {
         const [createdFromNode] = node!.outputs!;
-        return Utils.getDefinitionsFromParentInput(
-          createdFromNode.definition,
-          nodes!.concat(stitchNodes)
-        ).map(Utils.nodeDefinitionToAcceptedEditorNodeDefinition);
+        return Utils.getDefinitionsFromParentInput(createdFromNode.definition, nodes!.concat(stitchNodes)).map(
+          Utils.nodeDefinitionToAcceptedEditorNodeDefinition,
+        );
       },
-      instances: undefined
+      instances: undefined,
     };
-    return [enumValue, objectValue];
+    const nullValue: EditorNodeDefinition = {
+      node: { ...Utils.createOND('null', true), outputs: [], inputs: null },
+      type: Value.NullValue,
+      data: {
+        type: Value.NullValue,
+        for: [ValueDefinition.InputValueDefinition],
+      },
+      help: help.NullValue,
+    };
+    return [enumValue, objectValue, nullValue];
   }
 }

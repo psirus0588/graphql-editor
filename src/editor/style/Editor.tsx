@@ -5,12 +5,13 @@ export const Editor = style({
   display: 'flex',
   flexFlow: 'row nowrap',
   alignSelf: 'stretch',
-  flex: 1
+  flex: 1,
 });
 
-export const DiagramContainer = style({
+export const FullScreenContainer = style({
   flex: 1,
-  alignSelf: 'stretch'
+  alignSelf: 'stretch',
+  height: '100%',
 });
 export const ErrorContainer = style({
   position: 'absolute',
@@ -21,5 +22,16 @@ export const ErrorContainer = style({
   background: `${Colors.grey[9]}dd`,
   marginTop: 10,
   fontSize: 12,
-  letterSpacing: 1
+  letterSpacing: 1,
+});
+
+export const Sidebar = style({
+  alignSelf: 'stretch',
+  zIndex: 2,
+  display: 'flex',
+  flex: 1,
+  flexDirection: 'column',
+  overflow: 'hidden',
+  background: Colors.grey[8],
+  position: 'relative',
 });

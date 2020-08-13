@@ -1,44 +1,22 @@
 var webpack = require('webpack');
-var path = require('path');
-var sourcePath = path.join(__dirname, './');
-var outPath = path.join(__dirname, './');
-
-var HtmlWebpackPlugin = require('html-webpack-plugin');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 var WebpackCleanupPlugin = require('webpack-cleanup-plugin');
 
+const baseWebpack = require('./webpack.config');
+const baseRules = require('./weback.rules');
+
 module.exports = {
-  context: sourcePath,
-  entry: {
-    app: './index.tsx'
-  },
-  output: {
-    path: outPath,
-    filename: 'bundle.js',
-    chunkFilename: '[chunkhash].js',
-    publicPath: '/'
-  },
-  target: 'web',
+  ...baseWebpack,
   mode: 'production',
-  resolve: {
-    extensions: ['.mjs', '.js', '.jsx', '.ts', '.tsx'],
-    mainFields: ['module', 'browser', 'main'],
-    alias: {
-      app: path.resolve(__dirname, '../src')
-    }
-  },
   module: {
     rules: [
-      {
-        test: /\.tsx?$/,
-        loader: 'ts-loader',
-        options: { configFile: './sandbox/tsconfig.json' }
-      },
+      ...baseRules,
+      { test: /\.html$/, use: 'html-loader' },
       {
         test: /\.css$/,
         use: [
           {
-            loader: MiniCssExtractPlugin.loader
+            loader: MiniCssExtractPlugin.loader,
           },
           {
             loader: 'css-loader',
@@ -46,15 +24,12 @@ module.exports = {
               modules: true,
               sourceMap: false,
               importLoaders: 1,
-              localIdentName: '[local]__[hash:base64:5]'
-            }
-          }
-        ]
+              localIdentName: '[local]__[hash:base64:5]',
+            },
+          },
+        ],
       },
-      { test: /\.html$/, use: 'html-loader' },
-      { test: /\.(png|svg)$/, use: 'url-loader?limit=10000' },
-      { test: /\.(jpg|gif)$/, use: 'file-loader' }
-    ]
+    ],
   },
   optimization: {
     splitChunks: {
@@ -62,29 +37,27 @@ module.exports = {
       cacheGroups: {
         commons: {
           chunks: 'initial',
-          minChunks: 2
+          minChunks: 2,
         },
         vendors: {
           test: /[\\/]node_modules[\\/]/,
           chunks: 'all',
-          priority: -10
-        }
-      }
+          priority: -10,
+        },
+      },
     },
-    runtimeChunk: true
+    runtimeChunk: true,
   },
   plugins: [
+    ...baseWebpack.plugins,
     new webpack.EnvironmentPlugin({
       NODE_ENV: 'production', // use 'development' unless process.env.NODE_ENV is defined
-      DEBUG: false
+      DEBUG: false,
     }),
     new WebpackCleanupPlugin(),
     new MiniCssExtractPlugin({
       filename: '[name].css',
-      chunkFilename: '[id].css'
+      chunkFilename: '[id].css',
     }),
-    new HtmlWebpackPlugin({
-      template: 'assets/index.html'
-    })
-  ]
+  ],
 };

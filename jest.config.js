@@ -1,9 +1,16 @@
 module.exports = {
   preset: 'ts-jest',
+  testEnvironment: 'jsdom',
   moduleFileExtensions: ['ts', 'tsx', 'js'],
-  testMatch: ['**/__tests__/**/*.spec.(ts|tsx)'],
+  testMatch: ['**/__test__/**/*.spec.(ts|tsx)'],
   moduleNameMapper: {
-    '\\.(jpg|jpeg|png|gif|eot|otf|webp|svg|ttf|woff|woff2|mp4|webm|wav|mp3|m4a|aac|oga)$':
-      '<rootDir>/__tests__/fileMock.js'
-  }
+    '\\.worker': '<rootDir>/__mocks__/workerMock.ts',
+    'monaco-editor': '<rootDir>/__mocks__/monaco-editor.ts',
+  },
+  globals: {
+    'ts-jest': {
+      tsConfig: 'tsconfig.json',
+    },
+  },
+  moduleDirectories: ['node_modules'],
 };
