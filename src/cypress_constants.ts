@@ -6,6 +6,9 @@ export const GraphQLEditorCypress = {
   code: {
     name: 'code',
   },
+  hierarchy: {
+    name: 'hierarchy',
+  },
   sidebar: {
     name: 'sidebar',
     menu: {
@@ -20,8 +23,8 @@ export const GraphQLEditorCypress = {
         code: {
           name: 'code',
         },
-        explorer: {
-          name: 'explorer',
+        hierarchy: {
+          name: 'hierarchy',
         },
       },
     },

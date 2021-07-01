@@ -16,7 +16,19 @@
     "lib": ["es6", "es7", "esnext", "dom"],
     "rootDir": "./src",
     "baseUrl": "./src/",
+    "paths": {
+      "@/*": ["./*"]
+    },
+    "plugins": [
+      {
+        "transform": "typescript-transform-paths"
+      },
+      {
+        "transform": "typescript-transform-paths",
+        "afterDeclarations": true
+      }
+    ],
     "skipLibCheck": true
   },
-  "exclude": ["lib", "sandbox", "cloud", "docs", "cypress", "__test__","__mocks__"]
+  "exclude": ["lib", "sandbox", "cloud", "docs", "cypress", "__test__", "__mocks__"]
 }

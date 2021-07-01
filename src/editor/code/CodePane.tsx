@@ -1,15 +1,15 @@
 import cx from 'classnames';
 import * as monaco from 'monaco-editor';
 import React, { useEffect, useRef, useState, useLayoutEffect } from 'react';
-import * as Icon from '../icons';
+import * as Icon from '@/editor/icons';
 import { StatusDot, TitleOfPane } from './Components';
 import * as styles from './style/Code';
 import { StatusDotProps } from './style/Components';
 import { theme, language, conf, settings, mapEditorErrorToMonacoDecoration } from './monaco';
-import { EditorError } from '../../validation';
-import { Workers } from '../../worker';
-import { cypressGet, GraphQLEditorCypress } from '../../cypress_constants';
-import { fontFamily } from '../../vars';
+import { Workers } from '@/worker';
+import { cypressGet, GraphQLEditorCypress } from '@/cypress_constants';
+import { fontFamily } from '@/vars';
+import { KeyboardActions, useErrorsState, useIOState } from '@/state/containers';
 
 export interface CodePaneOuterProps {
   readonly?: boolean;
@@ -21,6 +21,7 @@ export type CodePaneProps = {
   schema: string;
   onChange: (v: string) => void;
   libraries?: string;
+  scrollTo?: string;
 } & CodePaneOuterProps;
 
 monaco.languages.register({ id: 'graphqle' });
@@ -32,13 +33,38 @@ monaco.editor.defineTheme('graphql-editor', theme);
  * React compontent holding GraphQL IDE
  */
 export const CodePane = (props: CodePaneProps) => {
-  const { schema, libraries = '', onChange, readonly, size } = props;
+  const { schema, libraries = '', onChange, readonly, size, scrollTo } = props;
   const editor = useRef<HTMLDivElement>(null);
   const [monacoGql, setMonacoGql] = useState<monaco.editor.IStandaloneCodeEditor>();
   const [decorationIds, setDecorationIds] = useState<string[]>([]);
-  const [errors, setErrors] = useState<EditorError[]>([]);
-  const generateEnabled = !readonly && errors.length === 0;
+  const { codeErrors, setCodeErrors, setLockGraf } = useErrorsState();
+  const { setActions } = useIOState();
+  const generateEnabled = !readonly && codeErrors.length === 0;
+  useEffect(() => {
+    if (scrollTo) {
+      const items = monacoGql
+        ?.getModel()
+        ?.findNextMatch(scrollTo, { column: 0, lineNumber: 0 }, false, false, null, true);
 
+      if (items) {
+        const {
+          range: { startLineNumber, endLineNumber, startColumn, endColumn },
+        } = items;
+        monacoGql?.setPosition({
+          column: 0,
+          lineNumber: startLineNumber,
+        });
+        monacoGql?.setPosition({ column: 0, lineNumber: startLineNumber });
+        monacoGql?.revealPositionInCenter({ column: 0, lineNumber: startLineNumber }, monaco.editor.ScrollType.Smooth);
+        monacoGql?.setSelection({
+          startLineNumber,
+          endLineNumber,
+          startColumn,
+          endColumn,
+        });
+      }
+    }
+  }, [scrollTo]);
   useEffect(() => {
     if (editor.current) {
       monacoGql?.dispose();
@@ -56,7 +82,7 @@ export const CodePane = (props: CodePaneProps) => {
       m.onDidChangeModelContent((e) => {
         const value = m!.getModel()!.getValue();
         Workers.validate(value, libraries).then((errors) => {
-          setErrors(errors);
+          setCodeErrors(errors);
         });
       });
       m.onDidBlurEditorText(() => {
@@ -68,6 +94,7 @@ export const CodePane = (props: CodePaneProps) => {
         Workers.validate(value, libraries).then((errors) => {
           if (errors.length === 0) {
             onChange(value);
+            setLockGraf(false);
           }
         });
       });
@@ -75,14 +102,14 @@ export const CodePane = (props: CodePaneProps) => {
       setTimeout(() => m.layout(), 100);
     }
     return () => monacoGql?.dispose();
-  }, [libraries]);
+  }, [libraries, readonly]);
   useEffect(() => {
     if (monacoGql) {
-      const monacoDecorations = errors.map(mapEditorErrorToMonacoDecoration);
+      const monacoDecorations = codeErrors.map(mapEditorErrorToMonacoDecoration);
       const newDecorationIds = monacoGql.deltaDecorations(decorationIds, monacoDecorations);
       setDecorationIds(newDecorationIds);
     }
-  }, [JSON.stringify(errors)]);
+  }, [JSON.stringify(codeErrors), monacoGql]);
   useEffect(() => {
     function handleResize() {
       monacoGql?.layout();
@@ -94,14 +121,39 @@ export const CodePane = (props: CodePaneProps) => {
     monacoGql?.layout();
   }, [size]);
   useEffect(() => {
-    monacoGql?.setValue(schema);
-  }, [schema]);
+    const v = monacoGql?.getModel()?.getValue();
+    if (v !== schema) {
+      const cursorPos = monacoGql?.getPosition();
+      monacoGql?.setValue(schema);
+      if (cursorPos) {
+        monacoGql?.setPosition(cursorPos);
+      }
+    }
+  }, [schema, monacoGql]);
   useLayoutEffect(() => {
     monaco.editor.remeasureFonts();
   }, [schema]);
 
   const monacoEditorModel = monacoGql?.getModel();
   const monacoEditorValue = monacoEditorModel && monacoEditorModel.getValue();
+  useEffect(() => {
+    setActions((acts) => ({
+      ...acts,
+      [KeyboardActions.Save]: () => {
+        const v = monacoGql?.getModel()?.getValue();
+        if (v && generateEnabled) {
+          Workers.validate(v, libraries).then((errors) => {
+            if (errors.length === 0) {
+              onChange(v);
+              setLockGraf(false);
+              return;
+            }
+          });
+        }
+      },
+    }));
+  }, [monacoGql, codeErrors]);
+
   const holder = useRef<HTMLDivElement>(null);
   const syncStatus = readonly
     ? StatusDotProps.readonly
@@ -111,7 +163,6 @@ export const CodePane = (props: CodePaneProps) => {
   return (
     <>
       <TitleOfPane>
-        code editor
         <div
           className={cx(styles.Generate, {
             disabled: !generateEnabled,

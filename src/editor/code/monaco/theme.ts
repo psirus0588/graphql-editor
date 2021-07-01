@@ -1,6 +1,6 @@
 import * as monaco from 'monaco-editor';
-import { Colors, mix } from '../../../Colors';
-import { GraphQLColors } from '../../../Graph/theme';
+import { Colors, mix } from '@/Colors';
+import { GraphQLColors } from '@/editor/theme';
 
 const docsColor = Colors.blue[2];
 
@@ -31,5 +31,7 @@ export const theme: monaco.editor.IStandaloneThemeData = {
   ],
   colors: {
     'editor.foreground': Colors.grey[0],
+    'editor.background': `#0b050d`,
+    'minimap.background': '#0b050d',
   },
 };

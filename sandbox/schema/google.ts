@@ -1,7 +1,4 @@
 export const googleDirections = `
-# GraphQL from graph at:
-# graphqleditor.com
-
 type Query{
 	_: Boolean
 	users: [User!]
@@ -69,7 +66,7 @@ type OtherPointDetails{
 	location: Coords!
 }
 
-type TypedData{
+type TypedData @authentication{
 	formattedValue: String!
 	rawValue: Int!
 }
